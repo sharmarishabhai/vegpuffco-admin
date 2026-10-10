@@ -3,14 +3,6 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
-  build: {
-    rollupOptions: {
-      input: {
-        customer: "index.html",
-        admin: "admin.html"
-      }
-    }
-  },
   server: {
     proxy: {
       "/api": "http://localhost:8999",

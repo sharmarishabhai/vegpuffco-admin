@@ -1,11 +1,9 @@
 {
-  "name": "vegpuffco-frontend",
+  "name": "vegpuffco-admin",
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "npm run dev:user",
-    "dev:user": "vite --host 0.0.0.0 --port 5173",
-    "dev:admin": "vite --host 0.0.0.0 --port 5174 --open /admin.html",
+    "dev": "vite --host 0.0.0.0 --port 5174",
     "build": "vite build",
     "preview": "vite preview"
   },
