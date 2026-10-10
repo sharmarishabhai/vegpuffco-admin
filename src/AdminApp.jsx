@@ -73,7 +73,7 @@ function Orders() {
   const [orders, setOrders] = useState([]);
   const [sound, setSound] = useState(false);
   const [flash, setFlash] = useState("");
-  const [incoming, setIncoming] = useState(null);
+  const [incomingOrders, setIncomingOrders] = useState([]);
   const [expanded, setExpanded] = useState({});
   const audioCtx = useRef(null);
   const soundRef = useRef(false);
@@ -148,14 +148,14 @@ function Orders() {
     s.on("new_order", (o) => {
       setOrders((x) => [o, ...x]);
       setExpanded((current) => ({ ...current, [o._id]: true }));
-      setIncoming(o);
+      setIncomingOrders((current) => [o, ...current.filter((order) => order._id !== o._id)]);
       setFlash(o._id);
       setTimeout(() => setFlash(""), 4000);
       startRinging(o);
     });
     s.on("order_updated", (o) => {
       if (["Confirmed", "Cancelled"].includes(o.status)) stopRinging(o._id);
-      setIncoming((current) => current?._id === o._id && ["Confirmed", "Cancelled"].includes(o.status) ? null : current);
+      setIncomingOrders((current) => ["Confirmed", "Cancelled"].includes(o.status) ? current.filter((order) => order._id !== o._id) : current.map((order) => order._id === o._id ? o : order));
       setOrders((x) => x.map((v) => v._id === o._id ? o : v));
       setExpanded((current) => current[o._id] === undefined ? { ...current, [o._id]: defaultExpanded(o) } : current);
     });
@@ -169,12 +169,12 @@ function Orders() {
       const up = await request(`/api/admin/orders/${o._id}/status`, { method: "PATCH", body: JSON.stringify({ status: next }) });
       if (["Confirmed", "Cancelled"].includes(up.status)) {
         stopRinging(up._id);
-        setIncoming((current) => current?._id === up._id ? null : current);
+        setIncomingOrders((current) => current.filter((order) => order._id !== up._id));
       }
       setOrders((x) => x.map((v) => v._id === up._id ? up : v));
     } catch (err) { alert(err.message); }
   };
-  return <AdminShell>{incoming && <div className="incomingOrder"><article className="incomingCard"><p className="eyebrow">New order</p><h2>{incoming.orderNo}</h2><p>{incoming.customerName || incoming.customer?.name} - {incoming.mobile || incoming.customer?.mobile} {(incoming.carNumber || incoming.customer?.carNumber) && `- ${incoming.carNumber || incoming.customer?.carNumber}`}</p><OrderItems order={incoming}/><b>Total {money(incoming.total)}</b><div><button onClick={() => status(incoming, "Confirmed")}><Check size={16}/> Confirm</button><button className="danger" onClick={() => status(incoming, "Cancelled")}><X size={16}/> Cancel</button></div></article></div>}<div className="adminHeader"><h1>Live orders</h1><button className={sound ? "btn secondary" : "btn"} onClick={enableSound}><Bell size={16}/> {sound ? "Sound Alerts On" : "Enable Sound Alerts"}</button></div><section className="orders">{orders.length === 0 && <p className="empty">No orders yet.</p>}{orders.map((o) => {
+  return <AdminShell>{incomingOrders.length > 0 && <div className="incomingOrder"><div className="incomingStack">{incomingOrders.map((incoming) => <article className="incomingCard" key={incoming._id}><p className="eyebrow">New order</p><h2>{incoming.orderNo}</h2><p>{incoming.customerName || incoming.customer?.name} - {incoming.mobile || incoming.customer?.mobile} {(incoming.carNumber || incoming.customer?.carNumber) && `- ${incoming.carNumber || incoming.customer?.carNumber}`}</p><OrderItems order={incoming}/><b>Total {money(incoming.total)}</b><div><button onClick={() => status(incoming, "Confirmed")}><Check size={16}/> Confirm</button><button className="danger" onClick={() => status(incoming, "Cancelled")}><X size={16}/> Cancel</button></div></article>)}</div></div>}<div className="adminHeader"><h1>Live orders</h1><button className={sound ? "btn secondary" : "btn"} onClick={enableSound}><Bell size={16}/> {sound ? "Sound Alerts On" : "Enable Sound Alerts"}</button></div><section className="orders">{orders.length === 0 && <p className="empty">No orders yet.</p>}{orders.map((o) => {
     const open = isExpanded(o);
     return <article className={flash === o._id ? "order hot" : "order"} key={o._id}>
       <div className="orderSummary">
