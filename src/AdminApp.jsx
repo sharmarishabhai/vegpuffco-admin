@@ -7,8 +7,9 @@ import "./style.css";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8999";
 const fallbackImage = "/vegpuff-logo.png";
-const money = (n) => `Rs. ${Number(n || 0).toFixed(0)}`;
+const money = (n) => `₹${Number(n || 0).toFixed(0)}`;
 const getToken = () => localStorage.getItem("vpcToken");
+const formatTime = (value) => value ? new Date(value).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "";
 
 async function request(path, options = {}) {
   const res = await fetch(`${API}${path}`, {
@@ -26,6 +27,20 @@ async function request(path, options = {}) {
 
 function ProductImage({ src, alt }) {
   return <img className="productImg" src={src || fallbackImage} alt={alt} loading="lazy" onError={(e) => { e.currentTarget.src = fallbackImage; }} />;
+}
+
+function OrderItems({ order }) {
+  return <div className="orderItems">{order.items.map((item, index) => <div className="orderItem" key={`${item.name}-${index}`}>
+    <span>{item.name}</span>
+    <span>Qty: {item.quantity}</span>
+    <span>{money(item.price)} each</span>
+  </div>)}</div>;
+}
+
+function OrderHistory({ order }) {
+  const history = order.statusHistory?.length ? order.statusHistory : order.history || [];
+  if (!history.length) return null;
+  return <div className="orderHistory"><b>Status history</b>{history.map((entry, index) => <p key={`${entry.status}-${index}`}>{entry.status} - {formatTime(entry.at)}{entry.by ? ` - ${entry.by}` : ""}</p>)}</div>;
 }
 
 function AdminShell({ children }) {
@@ -59,11 +74,24 @@ function Orders() {
   const [sound, setSound] = useState(false);
   const [flash, setFlash] = useState("");
   const [incoming, setIncoming] = useState(null);
+  const [expanded, setExpanded] = useState({});
   const audioCtx = useRef(null);
   const soundRef = useRef(false);
   const ringingOrders = useRef(new Set());
   const ringTimer = useRef(null);
-  const load = () => request("/api/admin/orders").then(setOrders).catch(alert);
+  const defaultExpanded = (order) => !["Completed", "Cancelled"].includes(order.status);
+  const isExpanded = (order) => expanded[order._id] ?? defaultExpanded(order);
+  const toggleOrder = (order) => setExpanded((current) => ({ ...current, [order._id]: !isExpanded(order) }));
+  const load = () => request("/api/admin/orders").then((data) => {
+    setOrders(data);
+    setExpanded((current) => {
+      const next = { ...current };
+      data.forEach((order) => {
+        if (next[order._id] === undefined) next[order._id] = defaultExpanded(order);
+      });
+      return next;
+    });
+  }).catch(alert);
   const playAlert = (when = 0) => {
     const ctx = audioCtx.current;
     if (!ctx || !soundRef.current) return;
@@ -119,6 +147,7 @@ function Orders() {
     const s = io(API);
     s.on("new_order", (o) => {
       setOrders((x) => [o, ...x]);
+      setExpanded((current) => ({ ...current, [o._id]: true }));
       setIncoming(o);
       setFlash(o._id);
       setTimeout(() => setFlash(""), 4000);
@@ -128,6 +157,7 @@ function Orders() {
       if (["Confirmed", "Cancelled"].includes(o.status)) stopRinging(o._id);
       setIncoming((current) => current?._id === o._id && ["Confirmed", "Cancelled"].includes(o.status) ? null : current);
       setOrders((x) => x.map((v) => v._id === o._id ? o : v));
+      setExpanded((current) => current[o._id] === undefined ? { ...current, [o._id]: defaultExpanded(o) } : current);
     });
     return () => {
       s.disconnect();
@@ -144,7 +174,18 @@ function Orders() {
       setOrders((x) => x.map((v) => v._id === up._id ? up : v));
     } catch (err) { alert(err.message); }
   };
-  return <AdminShell>{incoming && <div className="incomingOrder"><article className="incomingCard"><p className="eyebrow">New order</p><h2>{incoming.orderNo}</h2><p>{incoming.customerName || incoming.customer?.name} - {incoming.mobile || incoming.customer?.mobile} {(incoming.carNumber || incoming.customer?.carNumber) && `- ${incoming.carNumber || incoming.customer?.carNumber}`}</p><p>{incoming.items.map((i) => `${i.name} x${i.quantity}`).join(", ")}</p><b>{money(incoming.total)}</b><div><button onClick={() => status(incoming, "Confirmed")}><Check size={16}/> Confirm</button><button className="danger" onClick={() => status(incoming, "Cancelled")}><X size={16}/> Cancel</button></div></article></div>}<div className="adminHeader"><h1>Live orders</h1><button className={sound ? "btn secondary" : "btn"} onClick={enableSound}><Bell size={16}/> {sound ? "Sound Alerts On" : "Enable Sound Alerts"}</button></div><section className="orders">{orders.length === 0 && <p className="empty">No orders yet.</p>}{orders.map((o) => <article className={flash === o._id ? "order hot" : "order"} key={o._id}><h3>{o.orderNo} <span>{o.status}</span></h3><p>{o.customerName || o.customer?.name} - {o.mobile || o.customer?.mobile} {(o.carNumber || o.customer?.carNumber) && `- ${o.carNumber || o.customer?.carNumber}`}</p><p>{o.items.map((i) => `${i.name} x${i.quantity}`).join(", ")}</p><b>{money(o.total)}</b><div>{["Confirmed", "Preparing", "Ready", "Completed", "Cancelled"].map((s) => <button key={s} onClick={() => status(o, s)}>{s}</button>)}</div></article>)}</section></AdminShell>;
+  return <AdminShell>{incoming && <div className="incomingOrder"><article className="incomingCard"><p className="eyebrow">New order</p><h2>{incoming.orderNo}</h2><p>{incoming.customerName || incoming.customer?.name} - {incoming.mobile || incoming.customer?.mobile} {(incoming.carNumber || incoming.customer?.carNumber) && `- ${incoming.carNumber || incoming.customer?.carNumber}`}</p><OrderItems order={incoming}/><b>Total {money(incoming.total)}</b><div><button onClick={() => status(incoming, "Confirmed")}><Check size={16}/> Confirm</button><button className="danger" onClick={() => status(incoming, "Cancelled")}><X size={16}/> Cancel</button></div></article></div>}<div className="adminHeader"><h1>Live orders</h1><button className={sound ? "btn secondary" : "btn"} onClick={enableSound}><Bell size={16}/> {sound ? "Sound Alerts On" : "Enable Sound Alerts"}</button></div><section className="orders">{orders.length === 0 && <p className="empty">No orders yet.</p>}{orders.map((o) => {
+    const open = isExpanded(o);
+    return <article className={flash === o._id ? "order hot" : "order"} key={o._id}>
+      <div className="orderSummary">
+        <div><h3>{o.orderNo} <span>{o.status}</span></h3><p>{o.customerName || o.customer?.name} - {o.mobile || o.customer?.mobile} {(o.carNumber || o.customer?.carNumber) && `- ${o.carNumber || o.customer?.carNumber}`}</p><small>{formatTime(o.createdAt)}</small></div>
+        <b>Total {money(o.total)}</b>
+      </div>
+      <button className="toggleItems" onClick={() => toggleOrder(o)}>{open ? "Hide Items" : "View Items"}</button>
+      {open && <div className="orderDetails"><OrderItems order={o}/><div className="orderTotals"><span>Subtotal</span><b>{money(o.subtotal || o.total)}</b><span>Total</span><b>{money(o.total)}</b></div><OrderHistory order={o}/>{o.staffNotes && <p className="orderNotes"><b>Notes:</b> {o.staffNotes}</p>}</div>}
+      <div className="statusActions">{["Confirmed", "Preparing", "Ready", "Completed", "Cancelled"].map((s) => <button key={s} onClick={() => status(o, s)}>{s}</button>)}</div>
+    </article>;
+  })}</section></AdminShell>;
 }
 
 function Products() {
